@@ -1,1 +1,1 @@
-This code is the primary code used in R in my senior thesis for the Department of Environmental Studies at Yale University.
+This code is the primary R code used in my senior thesis for the Department of Environmental Studies at Yale University.
