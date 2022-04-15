@@ -1,571 +1,450 @@
 #### Packages ####
-  library(plyr)
-  library(dplyr)
-  library(tidyr)
-  library(lme4)
-  library(readxl)
-  library(data.table)
-  library(gsheet) 
-  library(plyr)
-  library(taxize)
-  library(taxonomizr)
-  library(stringr)
-  library(readr)
-  library(ggplot2)
   library(tidyverse)
   library(sf)
   library(rgeos)
 
 
-#### Spatial Tracking Cleaning ####
+#### Spatial Tracking Prep ####
 
-  ## download Spatial Data tab
-    url_spatial <- 'https://docs.google.com/spreadsheets/d/1VD-9xcXMcFNRGD8xYZN74lLYPEDNPhYgq-bPg2KN51g/edit#gid=428910701'
-    spatial <- as.data.frame(gsheet2tbl(url_spatial, sheetid = 'BIF Spatial Data'))
-
-
+  ## Download Spatial Data tab
+     url_spatial <- 'https://docs.google.com/spreadsheets/d/1VD-9xcXMcFNRGD8xYZN74lLYPEDNPhYgq-bPg2KN51g/edit#gid=428910701'
+     spatial <- as.data.frame(gsheet2tbl(url_spatial, sheetid = 'BIF Spatial Data'))
 
   ## Initial Cleaning: Spatial Data ##
-  #assign column names
-    colnames(spatial) <- spatial[1, ] # use text in row 1 as column names
-    spatial <- spatial[-(1), ]     #remove first row (no longer needed)
+     # Assign column names
+       colnames(spatial) <- spatial[1, ] # use text in row 1 as column names
+       spatial <- spatial[-(1), ]     #remove first row (no longer needed)
 
-  #convert columns to correct variable type
-    spatial$paperid <- as.numeric(spatial$paperid)
-    spatial$sciname <- as.factor(spatial$sciname)
-    spatial$minelev <- as.numeric(spatial$minelev)
-    spatial$maxelev <- as.numeric(spatial$maxelev)
+     # Convert columns to correct variable type
+       spatial$paperid <- as.numeric(spatial$paperid)
+       spatial$sciname <- as.factor(spatial$sciname)
+       spatial$minelev <- as.numeric(spatial$minelev)
+       spatial$maxelev <- as.numeric(spatial$maxelev)
 
-  #Clean up the entries for the quality column
-    spatial$quality <- gsub("DIGI", "DIG", spatial$quality, fixed = TRUE)
+     # Clean up the entries for the quality column
+       spatial$quality <- gsub("DIGI", "DIG", spatial$quality, fixed = TRUE)
 
  
-    
 #### Matrix Prep ####
+  
+  ## Download Matrix
+     BIF_matrix <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\Bioshift.v2.csv") %>%
+                   select(paperid, ecotype, sciname, tax, subsp, kingdom, phylum, class, order, family, species, dim, obsvt)
     
-  BIF_matrix <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\Bioshift.v2.csv") %>%
-    select(paperid, ecotype, sciname, tax, subsp, kingdom, phylum, class, order, family, species, dim, obsvt)
-    
-
     
 #### Shapefile Prep ####
     
   ## Import and clean shapefiles
-    features <- st_read("D:/GIS Data/MyProject3/BIF Poly Final.gdb") %>%
-      st_make_valid() %>% 
-      select(Name, Shape) 
-      colnames(features)[colnames(features) == "Name"] <- "polytitle"
+     features <- st_read("D:/GIS Data/MyProject3/BIF Poly Final.gdb") %>%
+                 st_make_valid() %>% 
+                 select(Name, Shape) 
+     colnames(features)[colnames(features) == "Name"] <- "polytitle"
       
       
 #### Joining ####
       
   ## Join shapefiles and spatial
-    sf_use_s2(FALSE)
-      
-    features_1 <- left_join(spatial, features, by = "polytitle") %>% 
-        mutate(sciname = as.character(sciname)) %>%
-        select(paperid, sciname, minelev, maxelev, population, availability, polytitle, Shape)
-        colnames(features_1)[colnames(features_1) == "population"] <- "subsp"
-  
-    
+     sf_use_s2(FALSE)
+     
+     features_1 <- left_join(spatial, features, by = "polytitle") %>%   
+                   mutate(sciname = as.character(sciname)) %>%
+                   select(paperid, sciname, minelev, maxelev, population, availability, polytitle, Shape)
+                   colnames(features_1)[colnames(features_1) == "population"] <- "subsp"
+   
   ## Join shapefiles with matrix
-  
-  #POP Level  
-    features_pop <- features_1 %>%
-      filter(availability == "POP-LEVEL") %>%
-      inner_join(BIF_matrix,{.}, by = c("paperid", "sciname", "subsp"))
+     # POP Level  
+       features_pop <- features_1 %>%
+                       filter(availability == "POP-LEVEL") %>%
+                       inner_join(BIF_matrix,{.}, by = c("paperid", "sciname", "subsp"))
     
-  #STUDY Level
-    features_study <- features_1 %>%
-      filter(availability == "STUDY-LEVEL",
-             !duplicated(paperid)) %>%
-      select(-subsp, -sciname) %>%
-      inner_join(BIF_matrix,{.}, by="paperid")
+     # STUDY Level
+       features_study <- features_1 %>%
+                         filter(availability == "STUDY-LEVEL", !duplicated(paperid)) %>%
+                         select(-subsp, -sciname) %>%
+                         inner_join(BIF_matrix,{.}, by="paperid")
     
-  #SP Level
-    features_sp <- features_1 %>%
-      filter(availability == "SPP-LEVEL") %>%
-      select(-subsp) %>%
-      inner_join(BIF_matrix, {.}, by = c("paperid", "sciname"))
+     # SP Level
+       features_sp <- features_1 %>%
+                      filter(availability == "SPP-LEVEL") %>%
+                      select(-subsp) %>%
+                      inner_join(BIF_matrix, {.}, by = c("paperid", "sciname"))
         
-  #Combine Levels
-    matrix_joined <- rbind(features_pop, features_study, features_sp)
+     # Combine Levels
+       matrix_joined <- rbind(features_pop, features_study, features_sp)
     
-       
-        
-        
-
-
-
-    
-    
+                   
 #### Harmonization ####
    
-  #Mammal 
-    mammal_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLMammalTaxa.csv")
-    
-    matrix_mammal <- matrix_joined %>% 
-      filter(tax == "mammal")
-  
-    mammal_joined <- left_join(matrix_mammal, mammal_taxa, by = c("species" = "Synonym")) %>%
-      select(-sciname, -subsp, -availability, -species, -Ambiguity, -match_type)
+  ## Mammal 
+     mammal_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLMammalTaxa.csv")
+     matrix_mammal <- matrix_joined %>% 
+                      filter(tax == "mammal")
+     mammal_joined <- left_join(matrix_mammal, mammal_taxa, by = c("species" = "Synonym")) %>%
+                      select(-sciname, -subsp, -availability, -species, -Ambiguity, -match_type)
     
     
-  #Reptile
-    reptile_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLReptileTaxa.csv")
+  ## Reptile
+     reptile_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLReptileTaxa.csv")
+     matrix_reptile <- matrix_joined %>%
+                       filter(tax == "reptile") 
+     reptile_joined <- left_join(matrix_reptile, reptile_taxa, by = c("species" = "Synonym")) %>%
+                       filter(U.or.A == "U") %>%
+                       select(-sciname, -subsp, -availability, -species, -U.or.A)
     
-    matrix_reptile <- matrix_joined %>%
-      filter(tax == "reptile") 
+  ## Bird
+     bird_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLBirdTaxa.csv")
+     matrix_bird <- matrix_joined %>% 
+                    filter(tax == "bird")
+     bird_joined <- left_join(matrix_bird, bird_taxa, by = c("species" = "Synonym")) %>%
+                    select(-sciname, -subsp, -availability, -species, -U.or.A)
     
-    reptile_joined <- left_join(matrix_reptile, reptile_taxa, by = c("species" = "Synonym")) %>%
-      filter(U.or.A == "U") %>%
-      select(-sciname, -subsp, -availability, -species, -U.or.A)
-    
-  #Bird
-    bird_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLBirdTaxa.csv")
-    
-    matrix_bird <- matrix_joined %>% 
-      filter(tax == "bird")
-    
-    bird_joined <- left_join(matrix_bird, bird_taxa, by = c("species" = "Synonym")) %>%
-      select(-sciname, -subsp, -availability, -species, -U.or.A)
-
-    
-  #Amphibian
-    amphib_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLAmphibianTaxa.csv")
-    
-    amphib_syn <- amphib_taxa %>%
-      filter(Ambiguity != "ambiguuous canonical") %>%
-      select(Accepted, Synonym) %>%
-      distinct()
-    
-    matrix_amphib <- matrix_joined %>%
-      filter(tax == "amphibian")
-    
-    amphib_joined <- left_join(matrix_amphib, amphib_syn, by = c("species" = "Synonym")) %>%
-      select(-sciname, -subsp, -availability, - species)
+  ## Amphibian
+     amphib_taxa <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\MOLAmphibianTaxa.csv")
+     amphib_syn <- amphib_taxa %>%
+                   filter(Ambiguity != "ambiguuous canonical") %>%
+                   select(Accepted, Synonym) %>%
+                   distinct()
+     matrix_amphib <- matrix_joined %>%
+                      filter(tax == "amphibian")
+     amphib_joined <- left_join(matrix_amphib, amphib_syn, by = c("species" = "Synonym")) %>%
+                      select(-sciname, -subsp, -availability, - species)
     
     
-  #Join harmonized taxa
-    matrix_harmony <- rbind(mammal_joined, reptile_joined, bird_joined, amphib_joined) 
-      colnames(matrix_harmony)[colnames(matrix_harmony) == "Accepted"] <- "species"
+  ## Join harmonized taxa
+     matrix_harmony <- rbind(mammal_joined, reptile_joined, bird_joined, amphib_joined) 
+     colnames(matrix_harmony)[colnames(matrix_harmony) == "Accepted"] <- "species"
     
     
     
 #### Make species and study polygons ####      
-      
-      spp_poly <- lapply(unique(matrix_harmony$species), function(sp){
-        poly <- matrix_harmony %>%
-          filter(species == {{sp}}) %>%
-          st_as_sf() %>%
-          st_make_valid() %>%
-          st_union() %>%
-          st_combine() %>%
-          st_as_sf() %>%
-          rename(geometry = "x") %>%
-          mutate(species = {{sp}})
-        return(poly)
-      })
-      
-      spp_poly_final <- do.call(rbind, spp_poly)
-      
-      ####spp_poly_joined is currently only terrestrial vertebrates, change to matrix_joined if all species wanted####
     
-    
-    
-      study_poly <- lapply(unique(matrix_joined$paperid), function(study){
-        poly <- matrix_joined %>%
-          filter(paperid == {{study}}) %>%
-          st_as_sf() %>%
-          st_make_valid() %>%
-          st_union() %>%
-          st_combine() %>%
-          st_as_sf() %>%
-          rename(geometry = "x") %>%
-          mutate(paperid = {{study}})
-        return(poly)
-      })
+  ## Make species polygons  
+     spp_poly <- lapply(unique(BIF_matrix$species), function(sp){
+         poly <- matrix_harmony %>%
+                 filter(species == {{sp}}) %>%
+                 st_as_sf() %>%
+                 st_make_valid() %>%
+                 st_union() %>%
+                 st_combine() %>%
+                 st_as_sf() %>%
+                 rename(geometry = "x") %>%
+                 mutate(species = {{sp}})
+         return(poly)
+         })
+         
+     spp_poly_final <- do.call(rbind, spp_poly)
+     
+  ## Join species polygons with matrix  
+     spp_poly_joined <- left_join(spp_poly_final, BIF_matrix, by = "species")
+     spp_poly_joined <- spp_poly_joined[!duplicated(spp_poly_joined$species),] %>%
+                        select("species", "minelev", "maxelev", "ecotype", "tax", "kingdom", "phylum", "class", "order", "family", "geometry")
+      
+  ## Make study polygons    
+     study_poly <- lapply(unique(matrix_joined$paperid), function(study){
+           poly <- matrix_joined %>%
+                   filter(paperid == {{study}}) %>%
+                   st_as_sf() %>%
+                   st_make_valid() %>%
+                   st_union() %>%
+                   st_combine() %>%
+                   st_as_sf() %>%
+                   rename(geometry = "x") %>%
+                   mutate(paperid = {{study}})
+           return(poly)
+           })
       
       study_poly_final <- do.call(rbind, study_poly)
     
-      st_write(study_poly_final, "study_poly.shp")
+        
+#### Make marine and terrestrial maps ####
     
-    
-    spp_poly_joined <- left_join(spp_poly_final, matrix_joined, by = "species")
-    spp_poly_joined <- spp_poly_joined[!duplicated(spp_poly_joined$species),] %>%
-                       select("species", "minelev", "maxelev", "ecotype", "tax", "kingdom", "phylum", "class", "order", "family", "geometry")
-    
-    
-    
-#### Join shapefiles/matrix with species elevation ####    
-
-    
-#### Make marine and terrestrial maps for Sarah/Madeleine ####
-    
+  ## Marine species map  
     spp_poly_marine <- spp_poly_joined[spp_poly_joined$ecotype == "marine",]
     spp_poly_marine <- spp_poly_marine[!duplicated(spp_poly_marine$species),] %>%
                        select("species", "geometry")
     st_write(spp_poly_marine, "spp_poly_marine.shp") 
 
-    
-    
-    
+  ## Terrestrial species map
     spp_poly_terr <- spp_poly_joined[spp_poly_joined$ecotype != "marine",] 
     spp_poly_terr <- spp_poly_terr[!duplicated(spp_poly_terr$species),] %>%
                      select("species", "geometry")
     st_write(spp_poly_terr, "spp_poly_terr.shp")
 
-    
-    
-    
-    
-#### Calculating extremes ####
+  ## Terrestrial study area(s) map  
+    studies_terr <- unique(BIF_matrix$paperid[BIF_matrix$ecotype != "marine"])
+    study_poly_terr <- study_poly_final[study_poly_final$paperid %in% studies_terr,]
+    st_write(study_poly_terr, "study_poly_terr.shp")
+  
+  ## Marine study area(s) map
+    studies_marine <- unique(BIF_matrix$paperid[BIF_matrix$ecotype == "marine"])
+    study_poly_marine <- study_poly_final[study_poly_final$paperid %in% studies_marine,]
+    st_write(study_poly_marine, "study_poly_marine.shp")
+  
+  
+#### Calculating elevation extremes and differences ####
    
-  #Create empty df 
+  ## Create empty df 
     study_elev <- data.frame(matrix(ncol = 3, nrow = length(sample_spp)))
     colnames(study_elev) <- c("species", "study_min_elev", "study_max_elev")  
    
-  #Calculate extremes and put into df   
+  ## Calculate extremes and put into df   
     for(i in 1:1319){
-      
-      temp_min_elev <- matrix_harmony$minelev[matrix_harmony$species == sample_spp[i]]
-      temp_max_elev <- matrix_harmony$maxelev[matrix_harmony$species == sample_spp[i]]
-      
-      study_elev[i,1] <- sample_spp[i]
-      study_elev[i,2] <- min(temp_min_elev, na.rm = TRUE)
-      study_elev[i,3] <- max(temp_max_elev, na.rm = TRUE)
-      
-    }
+       temp_min_elev <- matrix_harmony$minelev[matrix_harmony$species == sample_spp[i]]
+       temp_max_elev <- matrix_harmony$maxelev[matrix_harmony$species == sample_spp[i]]
+       study_elev[i,1] <- sample_spp[i]
+       study_elev[i,2] <- min(temp_min_elev, na.rm = TRUE)
+       study_elev[i,3] <- max(temp_max_elev, na.rm = TRUE)   
+       }
   
-  #Replace Inf values with NA  
+  ## Replace Inf values with NA  
     study_elev$study_min_elev[is.infinite(study_elev$study_min_elev)] <- NA
     study_elev$study_max_elev[is.infinite(study_elev$study_max_elev)] <- NA
     
-    
-    
-    
-    
-  #Read in spp_preference file from MOL
+  ## Read in spp_preference file from MOL
     spp_pref <- read.csv("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\mol_species_prefs_20210928.csv") %>%
                 select("scientificname", "elev_min", "elev_max")
     colnames(spp_pref) <- c("species", "range_min_elev", "range_max_elev")
     
-   #Join range and study area elevational tables 
+  ## Join range and study area elevational tables 
     spp_elev_joined <- left_join(study_elev, spp_pref)
     
-  #Calculate the difference between range and study area minimum elevation (neg values set to 0 because they result of coarseness of study area data)
+  ## Calculate the difference between range and study area minimum elevation (neg values set to 0 because they result of coarseness of study area data)
     spp_elev_joined$min_elev_diff <- (spp_elev_joined$study_min_elev - spp_elev_joined$range_min_elev)
-      spp_elev_joined$min_elev_diff[spp_elev_joined$min_elev_diff < 0] <- 0 
+    spp_elev_joined$min_elev_diff[spp_elev_joined$min_elev_diff < 0] <- 0 
   
-  #Calculate the difference between range and study area maximum elevation
+  ## Calculate the difference between range and study area maximum elevation
     spp_elev_joined$max_elev_diff <- (spp_elev_joined$range_max_elev - spp_elev_joined$study_max_elev)
-      spp_elev_joined$max_elev_diff[spp_elev_joined$max_elev_diff < 0] <- 0
+    spp_elev_joined$max_elev_diff[spp_elev_joined$max_elev_diff < 0] <- 0  
     
     
-    
-    
-    #### Script to copy the needed grid intersections ####
+#### Download gridded ranges ####
 
-  #Mammals
+  ## Copy files for needed species
+     # Mammals
+       mammal_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Mammalia"])
+       mammal_spp <- paste(mammal_spp, ".csv", sep = "")
+       mammal_spp <- paste("D:\\MOL Species Ranges\\Mammals CMW 720", mammal_spp, sep = "\\")
+       for(sp in mammal_spp){
+          file.copy(sp, "D:\\MOL Species Ranges\\MammalsFinal") 
+          } 
 
-    mammal_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Mammalia"])
-    mammal_spp <- paste(mammal_spp, ".csv", sep = "")
-    mammal_spp <- paste("D:\\MOL Species Ranges\\Mammals CMW 720", mammal_spp, sep = "\\")
+     # Birds
+       bird_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Aves"])
+       bird_spp <- str_replace_all(bird_spp, " ", "_") %>%
+                   paste(".csv", sep = "")
+       bird_spp <- paste("D:\\MOL Species Ranges\\Birds Jetz 720", bird_spp, sep = "\\") 
+       for(sp in bird_spp){
+          file.copy(sp, "D:\\MOL Species Ranges\\BirdsFinal")
+          } 
 
-    #for(sp in mammal_spp){
-        file.copy(sp, "D:\\MOL Species Ranges\\MammalsFinal") 
-        } #18 not available
+     # Amphibians
+       amphib_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Amphibia"])
+       amphib_spp <- str_replace_all(amphib_spp, " ", "_") %>%
+                     paste(".csv", sep = "")
+       amphib_spp <- paste("D:\\MOL Species Ranges\\Amphib Phylo 720", amphib_spp, sep = "\\")
+       for(sp in amphib_spp){
+          file.copy(sp, "D:\\MOL Species Ranges\\AmphibFinal")
+          }
 
-  #Birds
-
-    bird_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Aves"])
-    bird_spp <- str_replace_all(bird_spp, " ", "_") %>%
-                paste(".csv", sep = "")
-    bird_spp <- paste("D:\\MOL Species Ranges\\Birds Jetz 720", bird_spp, sep = "\\") 
-    
-    #for(sp in bird_spp){
-        file.copy(sp, "D:\\MOL Species Ranges\\BirdsFinal")
-        } #273 unavailable
-
-  #Amphibians
-    
-    amphib_spp <- unique(spp_poly_joined$species[spp_poly_joined$class == "Amphibia"])
-    amphib_spp <- str_replace_all(amphib_spp, " ", "_") %>%
-                  paste(".csv", sep = "")
-    amphib_spp <- paste("D:\\MOL Species Ranges\\Amphib Phylo 720", amphib_spp, sep = "\\")
-
-    #for(sp in amphib_spp){
-        file.copy(sp, "D:\\MOL Species Ranges\\AmphibFinal")
-        } #10 unavailable
-
-  #Reptiles
-    reptile_spp <- unique(spp_poly_joined$species[spp_poly_joined$tax == "reptile"])
-    reptile_spp <- str_replace_all(reptile_spp, " ", "_") %>%
-                   paste("intersection.csv", sep = "_")
-    reptile_spp <- paste("D:\\MOL Species Ranges\\Reptiles Phylomap 720", reptile_spp, sep = "\\")
-
-    #for(sp in reptile_spp){
-        file.copy(sp, "D:\\MOL Species Ranges\\ReptilesFinal")
-        } #6 unavailable
-
-
-
-
-
-
+     # Reptiles
+       reptile_spp <- unique(spp_poly_joined$species[spp_poly_joined$tax == "reptile"])
+       reptile_spp <- str_replace_all(reptile_spp, " ", "_") %>%
+                      paste("intersection.csv", sep = "_")
+       reptile_spp <- paste("D:\\MOL Species Ranges\\Reptiles Phylomap 720", reptile_spp, sep = "\\")
+       for(sp in reptile_spp){
+          file.copy(sp, "D:\\MOL Species Ranges\\ReptilesFinal")
+          }
 
 
 #### Make grid intersections for study areas ####
 
-    grid720 <- st_read("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\720x228global_20200527.shp")
+  ## Download grid
+     grid720 <- st_read("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\720x228global_20200527.shp")
     
-
-    get_720 <- function(speciesShp, grid = grid720){
-      temp <- speciesShp %>%
-        st_transform(crs = st_crs(grid)) %>%
-        st_intersection(grid) %>%
-        st_set_geometry(NULL) %>% 
-        select(species,ID_720)
-      return(temp)
-    }
-    
-    
-   #Run intersection function on all study area shapefiles
-      GridList <- list()
-    
-      for(i in 1:nrow(spp_poly_joined)){
-          spShp <- slice(spp_poly_joined, i)
-          GridList[[i]] <- get_720(spShp)
-          }
+  ## Make function to get grid intersections
+     get_720 <- function(speciesShp, grid = grid720){
+        temp <- speciesShp %>%
+                st_transform(crs = st_crs(grid)) %>%
+                st_intersection(grid) %>%
+                st_set_geometry(NULL) %>% 
+                select(species,ID_720)
+        return(temp)
+        }
+     
+  ## Run intersection function on all study area shapefiles
+     GridList <- list()
+     for(i in 1:nrow(spp_poly_joined)){
+        spShp <- slice(spp_poly_joined, i)
+        GridList[[i]] <- get_720(spShp)
+        }
   
-   #Calculate latitudes of each grid cell and transform to __
-      gridCentroids <- st_centroid(grid720$geometry) %>%
-                       st_transform(4326) %>%
-                       st_coordinates(.)
+  ## Calculate latitudes of each grid cell and transform
+     gridCentroids <- st_centroid(grid720$geometry) %>%
+                      st_transform(4326) %>%
+                      st_coordinates(.)
     
-   #Create tibble with ID and latitude    
-      gridLatitude <- tibble(ID_720 = grid720$ID_720,
-                             latitude = gridCentroids[,2])
+  ## Create tibble with ID and latitude    
+     gridLatitude <- tibble(ID_720 = grid720$ID_720,
+                            latitude = gridCentroids[,2])
     
-   #Make Gridlist into table, join latitude with species with grid ID  
-      GridX <- do.call(bind_rows, GridList) %>%
-               left_join(gridLatitude, by = "ID_720")
+  ## Make Gridlist into table, join latitude with species with grid ID  
+     GridX <- do.call(bind_rows, GridList) %>%
+              left_join(gridLatitude, by = "ID_720")
       
-    
-    
-  
       
 #### Import existing range intersections ####
       
- #NonReptile
-      
-   #Make list of all files in the folder    
-      RangeFiles <- list.files("D:\\MOL Species Ranges\\NonReptFinal", full.names = TRUE)
+  ## NonReptile 
+     # Make list of all files in the folder    
+       RangeFiles <- list.files("D:\\MOL Species Ranges\\NonReptFinal", full.names = TRUE)
     
-   #Read all csv files into R    
-      RangeList <- lapply(RangeFiles, read_csv)
+     # Read all csv files into R    
+       RangeList <- lapply(RangeFiles, read_csv)
       
-   #Combine all csv files into one table, join with latitude using gridID    
-      RangeX <- do.call(bind_rows, RangeList) %>%
-                left_join(gridLatitude, by = "ID_720") #have to deal with gridcode before this
+     # Combine all csv files into one table, join with latitude using gridID    
+       RangeX <- do.call(bind_rows, RangeList) %>%
+                 left_join(gridLatitude, by = "ID_720") 
    
-   #Remove unnecessary columns    
-      RangeX <- RangeX[,c("sciname", "ID_720", "latitude")]
+     # Remove unnecessary columns    
+       RangeX <- RangeX[,c("sciname", "ID_720", "latitude")]
     
-  #Reptile
-    
-    #Make list of all files in folder
-      RangeFilesRept <- list.files("D:\\MOL Species Ranges\\ReptilesFinal", full.names = TRUE)
-    
-    #Read all csv files into R
-      RangeListRept <- lapply(RangeFilesRept, read_csv)
+  ## Reptile
+     # Make list of all files in folder
+       RangeFilesRept <- list.files("D:\\MOL Species Ranges\\ReptilesFinal", full.names = TRUE)
+     
+     # Read all csv files into R
+       RangeListRept <- lapply(RangeFilesRept, read_csv)
       
-    #Combine all csv files into one table, join with latitude using gridID
-      RangeXRept <- do.call(bind_rows, RangeListRept) %>%
-                    left_join(gridLatitude, by = "ID_720")
+     # Combine all csv files into one table, join with latitude using gridID
+       RangeXRept <- do.call(bind_rows, RangeListRept) %>%
+                     left_join(gridLatitude, by = "ID_720")
       
-    #Remove unnecessary columns  
-      RangeXRept <- RangeXRept[,c("phylo_name", "ID_720", "latitude")]
+     # Remove unnecessary columns  
+       RangeXRept <- RangeXRept[,c("phylo_name", "ID_720", "latitude")]
+       colnames(RangeXRept)[colnames(RangeXRept) == "phylo_name"] <- "sciname"
+      
+  ## Join Reptile and Non-Reptile
+     RangeXFinal <- rbind(RangeX, RangeXRept)
+     colnames(RangeXFinal)[colnames(RangeXFinal) == "ID_720"] <- "ID_720_Range"
+     colnames(RangeXFinal)[colnames(RangeXFinal) == "latitude"] <- "lat_Range"
+     colnames(RangeXFinal)[colnames(RangeXFinal) == "sciname"] <- "species"
         
-      colnames(RangeXRept)[colnames(RangeXRept) == "phylo_name"] <- "sciname"
-      
-  #Join Reptile and Non-Reptile
-    
-      RangeXFinal <- rbind(RangeX, RangeXRept)
-      
-      colnames(RangeXFinal)[colnames(RangeXFinal) == "ID_720"] <- "ID_720_Range"
-      colnames(RangeXFinal)[colnames(RangeXFinal) == "latitude"] <- "lat_Range"
-      colnames(RangeXFinal)[colnames(RangeXFinal) == "sciname"] <- "species"
-      
-
-    
-    
-      
-  ##Remove species with single cell, only present in one df    
-      
-    Area_spp <- GridX %>%
-          group_by(species) %>%
-          count() %>%
-          filter(n >= 2) %>%
-          pull(species)
-    
-    Range_spp <- RangeXFinal %>%
-          group_by(species) %>%
-          count() %>%
-          filter(n >= 2) %>%
-          pull(species)
-      
-    sample_spp <- intersect(Area_spp, Range_spp)
+  ## Remove species with single cell, only present in one df    
+     # Get species whose study areas only have a single grid cell
+       Area_spp <- GridX %>%
+                   group_by(species) %>%
+                   count() %>%
+                   filter(n >= 2) %>%
+                   pull(species)
+                   
+     # Get species whose ranges only have a single grid cell
+       Range_spp <- RangeXFinal %>%
+                    group_by(species) %>%
+                    count() %>%
+                    filter(n >= 2) %>%
+                    pull(species)
+                    
+     # Get species with 2+ cells in both study areas and ranges 
+       sample_spp <- intersect(Area_spp, Range_spp)
   
-    RangeXFinal2 <- RangeXFinal %>%
-        filter(species %in% sample_spp)
-      
-    GridXFinal <- GridX %>%
-        filter(species %in% sample_spp)
-      
-      
-      
+     # Keep only ranges for retained species
+       RangeXFinal2 <- RangeXFinal %>%
+                       filter(species %in% sample_spp)
+                       
+     # Keep only study areas for retained species 
+       GridXFinal <- GridX %>%
+                     filter(species %in% sample_spp)
+        
     
-##Run tests  
+#### Run latitude and elevation tests ####
   
-  #Make df  
-    tests_lat <- data.frame(matrix(ncol = 5, nrow = length(sp)))
-    colnames(tests_lat) <- c("species", "p_value", "DiffMeans", "DiffMax", "DiffMin")  
+  ## Make df  
+     tests_lat <- data.frame(matrix(ncol = 5, nrow = length(sp)))
+     colnames(tests_lat) <- c("species", "p_value", "DiffMeans", "DiffMax", "DiffMin")  
     
-  #Get needed species  
-    sp <- unique(GridXFinal$species)
+  ## Get needed species  
+     sp <- unique(GridXFinal$species)
     
-  #Write new t.test function to deal with identical groups  
-    my_ttest <- function(Range, Area){
-      obj <- try(t.test(Range, Area), silent = TRUE)
-      if(is(obj, "try-error")) return(NA) else return(obj$p.value)
-    }
+  ## Write new t.test function to deal with identical groups  
+     my_ttest <- function(Range, Area){
+          obj <- try(t.test(Range, Area), silent = TRUE)
+          if(is(obj, "try-error")) return(NA) else return(obj$p.value)
+          }
     
-  #Run t.test, and get difference of mean/max/min  
-    for(i in 1:(length(sp))){
+  ## Run t.test, and get difference of mean/max/min  
+     for(i in 1:(length(sp))){
+        tempRange <- RangeXFinal2$lat_Range[RangeXFinal2$species == sp[i]]
+        tempArea <- GridXFinal$latitude[GridXFinal$species == sp[i]]
       
-      tempRange <- RangeXFinal2$lat_Range[RangeXFinal2$species == sp[i]]
-      tempArea <- GridXFinal$latitude[GridXFinal$species == sp[i]]
+        tests_lat[i,1] <- sp[i]
+        tests_lat[i,2] <- my_ttest(tempRange, tempArea)
+        tests_lat[i,3] <- (mean(tempArea) - mean(tempRange))
+        tests_lat[i,4] <- abs(max(tempRange) - max(tempArea)) #abs is to deal with southern hemisphere (neg lats)
+        tests_lat[i,5] <- abs(min(tempRange) - min(tempArea))
+        }
+    
+  ## Join test df with spp_poly_joined  
+     tests_lat_joined <- left_join(tests_lat, spp_poly_joined) %>%
+                         select(species, p_value, DiffMeans, DiffMax, DiffMin, ecotype, tax)
+    
+  ## Join latitude test results with elevational data and results
+     tests_lat_final <- left_join(tests_lat_joined, spp_elev_joined)
+   
+  ## Determine edge coverage with buffer 
+     tests_lat_final$LatMaxYN <- (1 >= tests_lat_final$DiffMax) 
+     tests_lat_final$LatMinYN <- (1 >= tests_lat_final$DiffMin)
+     tests_lat_final$ElevMaxYN <- (100 >= tests_lat_final$max_elev_diff)
+     tests_lat_final$ElevMinYN <- (100 >= tests_lat_final$min_elev_diff)
+    
+     tests_lat_final$LatYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin)
+     tests_lat_final$ElevYN <- (100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
+     tests_lat_final$LatOrElevYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin | 100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
+    
+     tests_lat_final$NumberEdges <- apply(tests_lat_final[,14:17], 1, sum)   
+    
+    
+#### Run climate tests ####
+    
+  ## Read in bio1 data (average value for each cell determined in ArcGIS Pro)
+     GridID_bio1 <- read_xlsx("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\GridID_bio1.xlsx")
+    
+  ## Join range cells with temp  
+     RangeTemp <- left_join(RangeXFinal2, GridID_bio1, by = c("ID_720_Range" = "ID_720")) %>%
+                  select(species, ID_720_Range, Mean)
+     names(RangeTemp)[2:3] <- c("ID_720", "Temp")
+    
+  ## Join study area cells with temp  
+     AreasTemp <- left_join(GridXFinal, GridID_bio1) %>%
+                  select(species, ID_720, Mean) 
+     names(AreasTemp)[3] <- "Temp"
+    
+  ## Make df  
+     tests_bio1 <- data.frame(matrix(ncol = 5, nrow = length(sp)))
+     colnames(tests_bio1) <- c("species", "p_value", "DiffMeans", "DiffMax", "DiffMin")  
+    
+  ## Run t.test, and get difference of mean/max/min  
+     for(i in 1:(length(sp))){
+        tempRange <- RangeTemp$Temp[RangeTemp$species == sp[i]]
+        tempArea <- AreasTemp$Temp[AreasTemp$species == sp[i]]
       
-      tests_lat[i,1] <- sp[i]
-      tests_lat[i,2] <- my_ttest(tempRange, tempArea)
-      tests_lat[i,3] <- (mean(tempArea) - mean(tempRange))
-      tests_lat[i,4] <- abs(max(tempRange) - max(tempArea)) #abs is to deal with southern hemisphere (neg lats)
-      tests_lat[i,5] <- abs(min(tempRange) - min(tempArea))
-      
-      
-    }
+        tests_bio1[i,1] <- sp[i]
+        tests_bio1[i,2] <- my_ttest(tempRange, tempArea)
+        tests_bio1[i,3] <- (mean(tempArea) - mean(tempRange))
+        tests_bio1[i,4] <- max(tempRange) - max(tempArea) 
+        tests_bio1[i,5] <- min(tempArea) - min(tempRange)
+        }
     
+  ## Get rid of Mean/Max Diff values below 0 (they're due to multispecies studies including areas outside of range)  
+     tests_bio1[tests_bio1$DiffMin < 0, 5] <- 0
+     tests_bio1[tests_bio1$DiffMax < 0, 4] <- 0
     
-  #Join test df with spp_poly_joined to get ecotype and taxon 
-    tests_lat_joined <- left_join(tests_lat, spp_poly_joined) %>%
-        select(species, p_value, DiffMeans, DiffMax, DiffMin, ecotype, tax)
+  ## Combine results with species data  
+     tests_bio1_joined <- left_join(tests_bio1, spp_poly_joined) %>%
+                          select(species, p_value, DiffMeans, DiffMax, DiffMin, ecotype, tax)
+     tests_bio1_joined$MaxYN <- (0.1 >= tests_bio1_joined$DiffMax)
+     tests_bio1_joined$MinYN <- (0.1 >= tests_bio1_joined$DiffMin)
+     tests_bio1_joined$MinMaxYN <- apply(tests_bio1_joined[,8:9], 1, sum)
     
-    
-###Get extremes of elevational range
 
-  #Join latitude test results with elevational data 
-    tests_lat_final <- left_join(tests_lat_joined, spp_elev_joined)
-    
-
-    
-  #Assign TRUE or FALSE to each species to see if they are within a reasonable distance of the edge (need to figure out what that distance is)  
-    
-    tests_lat_final$LatMaxYN <- (1 >= tests_lat_final$DiffMax) #or do i do these as 0 -- there isn't much difference in numbers
-    tests_lat_final$LatMinYN <- (1 >= tests_lat_final$DiffMin)
-    tests_lat_final$ElevMaxYN <- (100 >= tests_lat_final$max_elev_diff)
-    tests_lat_final$ElevMinYN <- (100 >= tests_lat_final$min_elev_diff)
-    
-    tests_lat_final$LatYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin)
-    tests_lat_final$ElevYN <- (100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
-    tests_lat_final$LatOrElevYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin | 100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
-    
-    tests_lat_final$NumberEdges <- apply(tests_lat_final[,14:17], 1, sum)   
-    
-    
-    
-    #1 degree lat buffer causes doubling of species
-    
-    for(i in length(spp_poly_joined$geometry)){ 
-      
-      poly_lat_area$latitude[i] <- abs(st_coordinates(st_centroid(st_transform(study_poly_final$geometry[2], 3857)))[2])
-    
-      
-      } ##what is this?
-    
-    
-    
-    
-    
-    
-## Climate Analysis ##
-    
-  #Read in bio1 data  
-    GridID_bio1 <- read_xlsx("C:\\Users\\ejpar\\Documents\\BIF-data-analysis\\GridID_bio1.xlsx")
-    
-  #Join range cells with temp  
-    RangeTemp <- left_join(RangeXFinal2, GridID_bio1, by = c("ID_720_Range" = "ID_720")) %>%
-                 select(species, ID_720_Range, Mean)
-    names(RangeTemp)[2:3] <- c("ID_720", "Temp")
-    
-  #Join study area cells with temp  
-    AreasTemp <- left_join(GridXFinal, GridID_bio1) %>%
-                 select(species, ID_720, Mean) 
-    names(AreasTemp)[3] <- "Temp"
-    
-    
-    
-  #Make df  
-    tests_bio1 <- data.frame(matrix(ncol = 5, nrow = length(sp)))
-    colnames(tests_bio1) <- c("species", "p_value", "DiffMeans", "DiffMax", "DiffMin")  
-    
-    
-  #Write new t.test function to deal with identical groups  
-    my_ttest <- function(Range, Area){
-      obj <- try(t.test(Range, Area), silent = TRUE)
-      if(is(obj, "try-error")) return(NA) else return(obj$p.value)
-    }
-    
-  #Run t.test, and get difference of mean/max/min  
-    for(i in 1:(length(sp))){
-      
-      tempRange <- RangeTemp$Temp[RangeTemp$species == sp[i]]
-      tempArea <- AreasTemp$Temp[AreasTemp$species == sp[i]]
-      
-      tests_bio1[i,1] <- sp[i]
-      tests_bio1[i,2] <- my_ttest(tempRange, tempArea)
-      tests_bio1[i,3] <- (mean(tempArea) - mean(tempRange))
-      tests_bio1[i,4] <- max(tempRange) - max(tempArea) ## are these calculations correct?
-      tests_bio1[i,5] <- min(tempArea) - min(tempRange)
-    }
-    
-  #Get rid of Mean/Max Diff values below 0 (they're due to multispecies studies including areas outside of range)  
-    tests_bio1[tests_bio1$DiffMin < 0, 5] <- 0
-    tests_bio1[tests_bio1$DiffMax < 0, 4] <- 0
-    
-    
-    tests_bio1_joined <- left_join(tests_bio1, spp_poly_joined) %>%
-      select(species, p_value, DiffMeans, DiffMax, DiffMin, ecotype, tax)
-    
-    
-    tests_bio1_joined$MaxYN <- (0.1 >= tests_bio1_joined$DiffMax)
-    tests_bio1_joined$MinYN <- (0.1 >= tests_bio1_joined$DiffMin)
-    tests_bio1_joined$MinMaxYN <- apply(tests_bio1_joined[,8:9], 1, sum)
-    
-    
-##Get study area and range size
-    
-    spp_poly_joined$area <- st_area(spp_poly_joined$geometry)
-
-    
-    RangeSize <- apply(as.matrix.noquote(data.frame(table(RangeXFinal2$species))),2,as.numeric)
-    colnames(RangeSize) <- "size"
-    spp <- as.matrix(unique(GridXFinal$species))
-    colnames(spp) <- "spp"
-    bind_cols(RangeSize, spp)
-    RangeSize <- left_join(RangeSize, spp_poly_joined, by = c("...2" = "species")) %>% 
-                 select(...1, ...2, tax)
-    
-    
-    
- 
+       
+       
