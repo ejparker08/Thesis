@@ -155,30 +155,6 @@
       
       study_poly_final <- do.call(rbind, study_poly)
     
-        
-#### Make marine and terrestrial maps ####
-    
-  ## Marine species map  
-    spp_poly_marine <- spp_poly_joined[spp_poly_joined$ecotype == "marine",]
-    spp_poly_marine <- spp_poly_marine[!duplicated(spp_poly_marine$species),] %>%
-                       select("species", "geometry")
-    st_write(spp_poly_marine, "spp_poly_marine.shp") 
-
-  ## Terrestrial species map
-    spp_poly_terr <- spp_poly_joined[spp_poly_joined$ecotype != "marine",] 
-    spp_poly_terr <- spp_poly_terr[!duplicated(spp_poly_terr$species),] %>%
-                     select("species", "geometry")
-    st_write(spp_poly_terr, "spp_poly_terr.shp")
-
-  ## Terrestrial study area(s) map  
-    studies_terr <- unique(BIF_matrix$paperid[BIF_matrix$ecotype != "marine"])
-    study_poly_terr <- study_poly_final[study_poly_final$paperid %in% studies_terr,]
-    st_write(study_poly_terr, "study_poly_terr.shp")
-  
-  ## Marine study area(s) map
-    studies_marine <- unique(BIF_matrix$paperid[BIF_matrix$ecotype == "marine"])
-    study_poly_marine <- study_poly_final[study_poly_final$paperid %in% studies_marine,]
-    st_write(study_poly_marine, "study_poly_marine.shp")
   
   
 #### Calculating elevation extremes and differences ####
@@ -391,17 +367,10 @@
      tests_lat_final <- left_join(tests_lat_joined, spp_elev_joined)
    
   ## Determine edge coverage with buffer 
-     tests_lat_final$LatMaxYN <- (1 >= tests_lat_final$DiffMax) 
-     tests_lat_final$LatMinYN <- (1 >= tests_lat_final$DiffMin)
      tests_lat_final$ElevMaxYN <- (100 >= tests_lat_final$max_elev_diff)
      tests_lat_final$ElevMinYN <- (100 >= tests_lat_final$min_elev_diff)
-    
-     tests_lat_final$LatYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin)
-     tests_lat_final$ElevYN <- (100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
-     tests_lat_final$LatOrElevYN <- (1 >= tests_lat_final$DiffMax | 1 >= tests_lat_final$DiffMin | 100 >= tests_lat_final$max_elev_diff | 100 >= tests_lat_final$min_elev_diff)
-    
-     tests_lat_final$NumberEdges <- apply(tests_lat_final[,14:17], 1, sum)   
-    
+   
+   
     
 #### Run climate tests ####
     
@@ -441,10 +410,5 @@
   ## Combine results with species data  
      tests_bio1_joined <- left_join(tests_bio1, spp_poly_joined) %>%
                           select(species, p_value, DiffMeans, DiffMax, DiffMin, ecotype, tax)
-     tests_bio1_joined$MaxYN <- (0.1 >= tests_bio1_joined$DiffMax)
-     tests_bio1_joined$MinYN <- (0.1 >= tests_bio1_joined$DiffMin)
-     tests_bio1_joined$MinMaxYN <- apply(tests_bio1_joined[,8:9], 1, sum)
-    
-
-       
-       
+     tests_bio1_joined$MaxYN <- (1.1 >= tests_bio1_joined$DiffMax)
+     tests_bio1_joined$MinYN <- (1.1 >= tests_bio1_joined$DiffMin)
